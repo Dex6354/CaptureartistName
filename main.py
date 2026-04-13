@@ -3,52 +3,61 @@ from ytmusicapi import YTMusic
 
 st.set_page_config(page_title="YTMusic Artist Extractor", layout="centered")
 
-st.title("🎵 Extração de Nome do Artista")
+st.title("👤 Extração de Nome do Artista")
 st.write("Acessando o endpoint `/next` para capturar metadados do artista.")
 
 song_id = st.text_input("Digite o Song ID:", value="ikFFVfObwss")
 
 if st.button("Buscar Artista", type="primary"):
     if song_id:
-        with st.spinner("Simulando requisição..."):
+        with st.spinner("Analisando JSON..."):
             try:
                 yt = YTMusic()
-                
-                # Requisição ao endpoint 'next'
                 body = {"videoId": song_id}
-                endpoint = "next"
-                response = yt._send_request(endpoint, body)
+                response = yt._send_request("next", body)
                 
-                artist_name = None
-
-                # Função para buscar o nome do artista no JSON
-                # O YT Music armazena o artista geralmente em 'byline' ou 'longBylineText'
-                def find_artist(obj):
+                def find_artist_name(obj):
+                    # O nome do artista no YT Music geralmente está em objetos 'runs'
+                    # vinculados a um browseId de canal (UC...)
                     if isinstance(obj, dict):
-                        # Verifica se é um objeto de navegação de artista
                         if "browseId" in obj and isinstance(obj["browseId"], str):
                             if obj["browseId"].startswith("UC") or obj["browseId"].startswith("FMat"):
-                                # Se encontrar o ID do artista, o texto associado é o nome
-                                if "text" in obj:
-                                    return obj["text"]
+                                # Verificamos se o texto está no mesmo nível ou acima
+                                return obj.get("text")
                         
                         for v in obj.values():
-                            result = find_artist(v)
-                            if result: return result
+                            res = find_artist_name(v)
+                            if res: return res
                     elif isinstance(obj, list):
                         for item in obj:
-                            result = find_artist(item)
-                            if result: return result
+                            res = find_artist_name(item)
+                            if res: return res
                     return None
 
-                artist_name = find_artist(response)
+                # Tentativa 2: Busca por padrões comuns de texto de autoria
+                def fallback_search(obj):
+                    if isinstance(obj, dict):
+                        # Procura por campos comuns que guardam o nome do artista
+                        for key in ["author", "artist", "longBylineText", "byline"]:
+                            if key in obj:
+                                # Geralmente é uma estrutura de 'runs'
+                                try:
+                                    return obj[key]["runs"][0]["text"]
+                                except:
+                                    continue
+                        for v in obj.values():
+                            res = fallback_search(v)
+                            if res: return res
+                    return None
 
-                if artist_name:
-                    st.success("Nome do Artista encontrado!")
-                    st.header(f"👤 {artist_name}")
+                artist = find_artist_name(response) or fallback_search(response)
+
+                if artist:
+                    st.success("Artista localizado!")
+                    st.header(artist)
                 else:
-                    st.error("Não foi possível localizar o nome do artista no JSON.")
-                    with st.expander("Inspecionar JSON completo"):
+                    st.error("Nome do artista não encontrado no JSON.")
+                    with st.expander("Debug: Ver JSON completo"):
                         st.json(response)
                         
             except Exception as e:
