@@ -4,60 +4,49 @@ from ytmusicapi import YTMusic
 st.set_page_config(page_title="YTMusic Artist Extractor", layout="centered")
 
 st.title("👤 Extração de Nome do Artista")
-st.write("Acessando o endpoint `/next` para capturar metadados do artista.")
+st.write("Buscando artista via `longBylineText` no endpoint `/next`.")
 
 song_id = st.text_input("Digite o Song ID:", value="ikFFVfObwss")
 
 if st.button("Buscar Artista", type="primary"):
     if song_id:
-        with st.spinner("Analisando JSON..."):
+        with st.spinner("Lendo metadados..."):
             try:
                 yt = YTMusic()
                 body = {"videoId": song_id}
                 response = yt._send_request("next", body)
                 
-                def find_artist_name(obj):
-                    # O nome do artista no YT Music geralmente está em objetos 'runs'
-                    # vinculados a um browseId de canal (UC...)
+                artist_name = None
+
+                # Função de busca específica para o padrão identificado
+                def extract_artist(obj):
                     if isinstance(obj, dict):
-                        if "browseId" in obj and isinstance(obj["browseId"], str):
-                            if obj["browseId"].startswith("UC") or obj["browseId"].startswith("FMat"):
-                                # Verificamos se o texto está no mesmo nível ou acima
-                                return obj.get("text")
+                        # Alvo direto no campo que você encontrou
+                        if "longBylineText" in obj:
+                            try:
+                                # O primeiro item do 'runs' costuma ser o nome do artista
+                                return obj["longBylineText"]["runs"][0]["text"]
+                            except (KeyError, IndexError):
+                                pass
                         
+                        # Busca recursiva caso o campo esteja mais profundo
                         for v in obj.values():
-                            res = find_artist_name(v)
-                            if res: return res
+                            result = extract_artist(v)
+                            if result: return result
                     elif isinstance(obj, list):
                         for item in obj:
-                            res = find_artist_name(item)
-                            if res: return res
+                            result = extract_artist(item)
+                            if result: return result
                     return None
 
-                # Tentativa 2: Busca por padrões comuns de texto de autoria
-                def fallback_search(obj):
-                    if isinstance(obj, dict):
-                        # Procura por campos comuns que guardam o nome do artista
-                        for key in ["author", "artist", "longBylineText", "byline"]:
-                            if key in obj:
-                                # Geralmente é uma estrutura de 'runs'
-                                try:
-                                    return obj[key]["runs"][0]["text"]
-                                except:
-                                    continue
-                        for v in obj.values():
-                            res = fallback_search(v)
-                            if res: return res
-                    return None
+                artist_name = extract_artist(response)
 
-                artist = find_artist_name(response) or fallback_search(response)
-
-                if artist:
-                    st.success("Artista localizado!")
-                    st.header(artist)
+                if artist_name:
+                    st.success("Artista encontrado!")
+                    st.header(f"🎸 {artist_name}")
                 else:
-                    st.error("Nome do artista não encontrado no JSON.")
-                    with st.expander("Debug: Ver JSON completo"):
+                    st.error("Não foi possível localizar 'longBylineText' no JSON.")
+                    with st.expander("Inspecionar JSON bruto"):
                         st.json(response)
                         
             except Exception as e:
